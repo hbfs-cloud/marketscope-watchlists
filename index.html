@@ -39,14 +39,41 @@
         <select id="listFilter" aria-label="Filtrer par liste"><option value="">Toutes les listes</option></select>
         <select id="marketFilter" aria-label="Filtrer par marché"><option value="">Tous les marchés</option><option value="US">US</option><option value="EU">Europe</option><option value="CRYPTO">Crypto</option><option value="MACRO">Macro</option><option value="APAC">APAC</option></select>
         <select id="signalFilter" aria-label="Filtrer par setup"><option value="">Tous les setups</option><option value="momentum">Momentum</option><option value="breakout">Breakout</option><option value="pullback">Pullback</option><option value="above200">Au-dessus MA200</option><option value="relvol">Volume relatif &gt; 1,5×</option><option value="oversold">RSI survendu</option><option value="analyzed">Données techniques dispo</option></select>
-        <select id="sortBy" aria-label="Trier"><option value="change-desc">Variation ↓</option><option value="relvol-desc">Volume relatif ↓</option><option value="rsi-desc">RSI ↓</option><option value="ma200-desc">Écart MA200 ↓</option><option value="ticker">Ticker A–Z</option><option value="name">Nom A–Z</option><option value="lists-desc">Nb listes ↓</option></select>
-        <button id="tagsOnly" class="chip-toggle" aria-pressed="false"># Avec tags</button>
+        <details id="tagFilter" class="tag-filter">
+          <summary><span class="tag-filter-title"># Tags</span><span id="tagFilterCount" class="filter-count" hidden>0</span><span class="chevron" aria-hidden="true">⌄</span></summary>
+          <div class="tag-menu" aria-label="Filtrer par tags">
+            <div class="tag-menu-head"><strong>Tags personnels</strong><button id="clearTagFilters" type="button">Tout effacer</button></div>
+            <label class="tag-choice tagged-only"><input id="tagsOnly" type="checkbox"><span><b>Avec au moins un tag</b><small>Masquer les instruments non classés</small></span></label>
+            <div id="tagChoices" class="tag-choices"></div>
+          </div>
+        </details>
         <button id="analyzeBtn" class="chip-toggle">⌁ Actualiser l’analyse</button>
+      </div>
+
+      <div id="activeTagFilters" class="active-tag-filters" hidden></div>
+
+      <div class="table-tools">
+        <p><strong id="resultCount">287 instruments</strong><span id="sortStatus">Triés par variation, décroissant</span></p>
+        <div class="mobile-sort">
+          <label for="sortKey">Trier par</label>
+          <select id="sortKey" aria-label="Colonne de tri">
+            <option value="change">Variation</option><option value="price">Prix</option><option value="ticker">Ticker</option><option value="name">Nom</option><option value="lists">Nombre de listes</option><option value="market">Marché</option><option value="setup">Tendance</option><option value="relvol">Volume relatif</option><option value="rsi">RSI</option><option value="ma200">Écart MA200</option>
+          </select>
+          <button id="sortDirection" type="button" class="sort-direction" aria-label="Inverser le sens du tri">↓</button>
+        </div>
       </div>
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Instrument</th><th>Listes / tags</th><th>Marché</th><th>Tendance</th><th class="num">Prix</th><th class="num">Var.</th><th></th></tr></thead>
+          <thead><tr>
+            <th data-sort-column="ticker"><button class="sort-button" data-sort="ticker">Instrument <span aria-hidden="true">↕</span></button></th>
+            <th data-sort-column="lists"><button class="sort-button" data-sort="lists">Listes / tags <span aria-hidden="true">↕</span></button></th>
+            <th data-sort-column="market"><button class="sort-button" data-sort="market">Marché <span aria-hidden="true">↕</span></button></th>
+            <th data-sort-column="setup"><button class="sort-button" data-sort="setup">Tendance <span aria-hidden="true">↕</span></button></th>
+            <th class="num" data-sort-column="price"><button class="sort-button" data-sort="price">Prix <span aria-hidden="true">↕</span></button></th>
+            <th class="num" data-sort-column="change"><button class="sort-button" data-sort="change">Var. <span aria-hidden="true">↓</span></button></th>
+            <th></th>
+          </tr></thead>
           <tbody id="rows"></tbody>
         </table>
         <div id="empty" class="empty" hidden>Aucun instrument pour ces filtres.</div>

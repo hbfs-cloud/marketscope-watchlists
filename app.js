@@ -1,13 +1,25 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
-const STORAGE = { tags: 'marketscope:tags', alerts: 'marketscope:alerts', firebase: 'marketscope:firebase' };
+const STORAGE = { tags: 'marketscope:tags', alerts: 'marketscope:alerts', firebase: 'marketscope:firebase', tagFilters: 'marketscope:tag-filters', sort: 'marketscope:sort' };
+const storedTagState = storedTagFilter();
 const state = {
   lists: [], assets: [], filtered: [], tags: read(STORAGE.tags, {}), alerts: read(STORAGE.alerts, []),
+  selectedTags: new Set(storedTagState.tags), taggedOnly: storedTagState.taggedOnly, sort: storedSort(),
   selected: null, stream: null, firebase: null, firebaseApi: null, remoteTimer: null, analysisLoading: false
 };
+const SORT_LABELS = { change:'variation', price:'prix', ticker:'ticker', name:'nom', lists:'nombre de listes', market:'marché', setup:'tendance', relvol:'volume relatif', rsi:'RSI', ma200:'écart MA200' };
 
 function read(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+}
+function storedTagFilter() {
+  const value = read(STORAGE.tagFilters, []);
+  if (Array.isArray(value)) return { tags:value, taggedOnly:false };
+  return value && typeof value === 'object' ? { tags:Array.isArray(value.tags) ? value.tags : [], taggedOnly:Boolean(value.taggedOnly) } : { tags:[], taggedOnly:false };
+}
+function storedSort() {
+  const value = read(STORAGE.sort, {});
+  return value && typeof value === 'object' ? { key:value.key || 'change', dir:value.dir === 'asc' ? 'asc' : 'desc' } : { key:'change', dir:'desc' };
 }
 function marketFor(id, ticker, name) {
   const text = `${id} ${ticker} ${name}`.toUpperCase();
@@ -122,6 +134,7 @@ function activeAlerts() {
 }
 function updateCounts() {
   $('#visibleCount').textContent = state.filtered.length;
+  $('#resultCount').textContent = `${state.filtered.length} instrument${state.filtered.length > 1 ? 's' : ''}`;
   $('#positiveCount').textContent = state.filtered.filter(a => (a.liveChange ?? a.tech?.change ?? a.change) > 0).length;
   $('#analyzedCount').textContent = state.assets.filter(a => a.tech).length;
   $('#alertCount').textContent = activeAlerts().length;
@@ -130,18 +143,74 @@ function renderFilters() {
   const options = state.lists.map(list => `<option value="${esc(list.name)}">${esc(list.name)} (${list.indexes.length})</option>`).join('');
   $('#listFilter').insertAdjacentHTML('beforeend', options);
 }
+function personalTags() {
+  const counts = new Map();
+  Object.values(state.tags).flat().forEach(tag => counts.set(tag, (counts.get(tag) || 0) + 1));
+  return [...counts.entries()].sort((a,b) => a[0].localeCompare(b[0], 'fr'));
+}
+function saveUiState() {
+  localStorage.setItem(STORAGE.tagFilters, JSON.stringify({ tags:[...state.selectedTags], taggedOnly:state.taggedOnly }));
+  localStorage.setItem(STORAGE.sort, JSON.stringify(state.sort));
+}
+function renderTagFilter() {
+  const tags = personalTags(), available = new Set(tags.map(([tag]) => tag));
+  state.selectedTags.forEach(tag => { if (!available.has(tag)) state.selectedTags.delete(tag); });
+  $('#tagsOnly').checked = state.taggedOnly;
+  $('#tagChoices').innerHTML = tags.length ? tags.map(([tag,count]) => `<label class="tag-choice"><input type="checkbox" data-filter-tag="${esc(tag)}" ${state.selectedTags.has(tag) ? 'checked' : ''}><span><b>#${esc(tag)}</b><small>${count} instrument${count > 1 ? 's' : ''}</small></span></label>`).join('') : '<p class="tag-empty">Aucun tag pour le moment.<br>Ajoutez-en depuis la fiche d’un instrument.</p>';
+  const filterCount = state.selectedTags.size + (state.taggedOnly ? 1 : 0), badge = $('#tagFilterCount');
+  badge.textContent = filterCount; badge.hidden = filterCount === 0;
+  const active = $('#activeTagFilters'), chips = [];
+  if (state.taggedOnly) chips.push('<button type="button" data-remove-tagged>Avec tags <span>×</span></button>');
+  state.selectedTags.forEach(tag => chips.push(`<button type="button" data-remove-tag="${esc(tag)}">#${esc(tag)} <span>×</span></button>`));
+  if (chips.length) chips.push('<button type="button" class="clear-active" data-clear-tags>Effacer les filtres tags</button>');
+  active.innerHTML = chips.join(''); active.hidden = chips.length === 0;
+  saveUiState();
+}
+function sortValue(asset, key) {
+  if (key === 'ticker') return asset.ticker;
+  if (key === 'name') return asset.name;
+  if (key === 'lists') return asset.lists.length;
+  if (key === 'market') return asset.market;
+  if (key === 'setup') return setupFor(asset) || '';
+  if (key === 'price') return asset.livePrice ?? asset.tech?.close ?? asset.priceNumber;
+  if (key === 'relvol') return asset.tech?.relVolume;
+  if (key === 'rsi') return asset.tech?.rsi;
+  if (key === 'ma200') return asset.tech?.ma200 ? (asset.tech.close - asset.tech.ma200) / asset.tech.ma200 : null;
+  return asset.liveChange ?? asset.tech?.change ?? asset.change;
+}
+function compareAssets(a, b) {
+  const av = sortValue(a, state.sort.key), bv = sortValue(b, state.sort.key), missingA = av == null || (typeof av === 'number' && !Number.isFinite(av)), missingB = bv == null || (typeof bv === 'number' && !Number.isFinite(bv));
+  if (missingA !== missingB) return missingA ? 1 : -1;
+  const base = typeof av === 'string' ? av.localeCompare(bv, 'fr', { sensitivity:'base' }) : (av - bv);
+  return (state.sort.dir === 'asc' ? base : -base) || a.ticker.localeCompare(b.ticker, 'fr');
+}
+function updateSortUi() {
+  const key = SORT_LABELS[state.sort.key] ? state.sort.key : 'change', dir = state.sort.dir === 'asc' ? 'asc' : 'desc';
+  state.sort = { key, dir };
+  document.querySelectorAll('[data-sort-column]').forEach(th => {
+    const active = th.dataset.sortColumn === key; th.setAttribute('aria-sort', active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none');
+    const arrow = $('span', th); if (arrow) arrow.textContent = active ? (dir === 'asc' ? '↑' : '↓') : '↕';
+  });
+  $('#sortKey').value = key; $('#sortDirection').textContent = dir === 'asc' ? '↑' : '↓';
+  $('#sortDirection').setAttribute('aria-label', `Tri ${dir === 'asc' ? 'croissant' : 'décroissant'} — inverser`);
+  $('#sortStatus').textContent = `Triés par ${SORT_LABELS[key]}, ${dir === 'asc' ? 'croissant' : 'décroissant'}`;
+  saveUiState();
+}
+function setSort(key, direction) {
+  const defaultDirection = ['ticker','name','market','setup'].includes(key) ? 'asc' : 'desc';
+  state.sort = { key, dir: direction || (state.sort.key === key ? (state.sort.dir === 'asc' ? 'desc' : 'asc') : defaultDirection) };
+  applyFilters();
+}
 function applyFilters() {
   const q = $('#search').value.trim().toLowerCase(), list = $('#listFilter').value, market = $('#marketFilter').value, signal = $('#signalFilter').value;
-  const tagged = $('#tagsOnly').getAttribute('aria-pressed') === 'true';
   state.filtered = state.assets.filter(asset => {
     const tags = state.tags[asset.id] || [];
     const haystack = `${asset.ticker} ${asset.name} ${asset.lists.join(' ')} ${tags.join(' ')}`.toLowerCase();
-    return (!q || haystack.includes(q)) && (!list || asset.lists.includes(list)) && (!market || asset.market === market) && matchesSignal(asset, signal) && (!tagged || tags.length);
+    const selectedTagMatch = !state.selectedTags.size || tags.some(tag => state.selectedTags.has(tag));
+    return (!q || haystack.includes(q)) && (!list || asset.lists.includes(list)) && (!market || asset.market === market) && matchesSignal(asset, signal) && (!state.taggedOnly || tags.length) && selectedTagMatch;
   });
-  const sort = $('#sortBy').value;
-  const maGap = asset => asset.tech?.ma200 ? (asset.tech.close - asset.tech.ma200) / asset.tech.ma200 : -Infinity;
-  state.filtered.sort((a,b) => sort === 'ticker' ? a.ticker.localeCompare(b.ticker) : sort === 'name' ? a.name.localeCompare(b.name) : sort === 'lists-desc' ? b.lists.length - a.lists.length : sort === 'relvol-desc' ? (b.tech?.relVolume ?? -Infinity) - (a.tech?.relVolume ?? -Infinity) : sort === 'rsi-desc' ? (b.tech?.rsi ?? -Infinity) - (a.tech?.rsi ?? -Infinity) : sort === 'ma200-desc' ? maGap(b) - maGap(a) : (b.liveChange ?? b.tech?.change ?? b.change) - (a.liveChange ?? a.tech?.change ?? a.change));
-  renderRows(); updateCounts();
+  state.filtered.sort(compareAssets);
+  renderRows(); updateCounts(); updateSortUi();
 }
 function renderRows() {
   const alerts = activeAlerts();
@@ -174,9 +243,9 @@ function renderDetail(asset, chart = null) {
   bindDetailActions(asset);
 }
 function bindDetailActions(asset) {
-  $('#addTag').onclick = () => { const input = $('#newTag'), tag = input.value.trim().replace(/^#/,'').toLowerCase(); if (!tag) return; state.tags[asset.id] = [...new Set([...(state.tags[asset.id] || []), tag])]; input.value=''; saveLocal(); applyFilters(); renderDetail(asset); };
+  $('#addTag').onclick = () => { const input = $('#newTag'), tag = input.value.trim().replace(/^#/,'').toLowerCase(); if (!tag) return; state.tags[asset.id] = [...new Set([...(state.tags[asset.id] || []), tag])]; input.value=''; saveLocal(); renderTagFilter(); applyFilters(); renderDetail(asset); };
   $('#newTag').onkeydown = e => { if (e.key === 'Enter') $('#addTag').click(); };
-  document.querySelectorAll('[data-tag]').forEach(button => button.onclick = () => { state.tags[asset.id] = (state.tags[asset.id] || []).filter(t => t !== button.dataset.tag); saveLocal(); applyFilters(); renderDetail(asset); });
+  document.querySelectorAll('[data-tag]').forEach(button => button.onclick = () => { state.tags[asset.id] = (state.tags[asset.id] || []).filter(t => t !== button.dataset.tag); saveLocal(); renderTagFilter(); applyFilters(); renderDetail(asset); });
   $('#addAlert').onclick = async () => {
     const target = Number($('#alertTarget').value), ttl = Number($('#alertTtl').value); if (!Number.isFinite(target)) return toast('Prix cible invalide');
     if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
@@ -252,7 +321,7 @@ async function connectGoogle(event) {
     const credential = await authMod.signInWithPopup(auth, provider), db = dbMod.getFirestore(app);
     const ref = dbMod.doc(db, 'users', credential.user.uid, 'marketscope', 'state'); const snapshot = await dbMod.getDoc(ref);
     state.firebase = { uid: credential.user.uid, ref }; state.firebaseApi = dbMod; localStorage.setItem(STORAGE.firebase, JSON.stringify(config));
-    if (snapshot.exists()) { const remote = snapshot.data(); state.tags = remote.tags || state.tags; state.alerts = remote.alerts || state.alerts; saveLocal(); applyFilters(); }
+    if (snapshot.exists()) { const remote = snapshot.data(); state.tags = remote.tags || state.tags; state.alerts = remote.alerts || state.alerts; saveLocal(); renderTagFilter(); applyFilters(); }
     else await dbMod.setDoc(ref, { tags: state.tags, alerts: state.alerts, updatedAt: Date.now() });
     status.textContent = `Synchronisé avec ${credential.user.email}`; $('#syncDialog').close(); $('#syncBtn').textContent = '✓ Google connecté'; toast('Synchronisation Google active');
   } catch (error) { status.textContent = `Échec : ${error.message}`; }
@@ -273,13 +342,20 @@ async function init() {
     state.lists = rawLists.map(([name,indexes]) => ({name,indexes}));
     const memberships = Array.from({length:rawAssets.length},()=>[]); state.lists.forEach(list => list.indexes.forEach(index => memberships[index]?.push(list.name)));
     state.assets = rawAssets.map(([id,ticker,name,price,change], index) => ({ id,ticker,name,price,priceNumber:numberFrom(price),change:numberFrom(change),market:marketFor(id,ticker,name),lists:memberships[index] }));
-    $('#assetCount').textContent = state.assets.length; renderFilters(); applyFilters(); registerWebMcp(); loadTechnicals();
+    $('#assetCount').textContent = state.assets.length; renderFilters(); renderTagFilter(); applyFilters(); registerWebMcp(); loadTechnicals();
     const config = localStorage.getItem(STORAGE.firebase); if (config) $('#firebaseConfig').value = config;
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
   } catch (error) { $('#rows').innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`; }
 }
-['search','listFilter','marketFilter','signalFilter','sortBy'].forEach(id => $(`#${id}`).addEventListener(id === 'search' ? 'input' : 'change', applyFilters));
-$('#tagsOnly').onclick = event => { const pressed = event.currentTarget.getAttribute('aria-pressed') === 'true'; event.currentTarget.setAttribute('aria-pressed', String(!pressed)); applyFilters(); };
+['search','listFilter','marketFilter','signalFilter'].forEach(id => $(`#${id}`).addEventListener(id === 'search' ? 'input' : 'change', applyFilters));
+document.querySelectorAll('[data-sort]').forEach(button => button.onclick = () => setSort(button.dataset.sort));
+$('#sortKey').onchange = event => setSort(event.target.value, ['ticker','name','market','setup'].includes(event.target.value) ? 'asc' : 'desc');
+$('#sortDirection').onclick = () => setSort(state.sort.key, state.sort.dir === 'asc' ? 'desc' : 'asc');
+$('#tagsOnly').onchange = event => { state.taggedOnly = event.target.checked; renderTagFilter(); applyFilters(); };
+$('#tagChoices').onchange = event => { const checkbox = event.target.closest('[data-filter-tag]'); if (!checkbox) return; checkbox.checked ? state.selectedTags.add(checkbox.dataset.filterTag) : state.selectedTags.delete(checkbox.dataset.filterTag); renderTagFilter(); applyFilters(); };
+$('#clearTagFilters').onclick = () => { state.selectedTags.clear(); state.taggedOnly = false; renderTagFilter(); applyFilters(); };
+$('#activeTagFilters').onclick = event => { const tag = event.target.closest('[data-remove-tag]'), tagged = event.target.closest('[data-remove-tagged]'), clear = event.target.closest('[data-clear-tags]'); if (tag) state.selectedTags.delete(tag.dataset.removeTag); if (tagged) state.taggedOnly = false; if (clear) { state.selectedTags.clear(); state.taggedOnly = false; } if (tag || tagged || clear) { renderTagFilter(); applyFilters(); } };
+document.addEventListener('click', event => { const filter = $('#tagFilter'); if (filter.open && !filter.contains(event.target)) filter.removeAttribute('open'); });
 $('#analyzeBtn').onclick = loadTechnicals;
 $('#rows').addEventListener('click', event => { const row = event.target.closest('tr'); if (row) openDetail(row.dataset.id); });
 $('#rows').addEventListener('keydown', event => { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('tr')) openDetail(event.target.dataset.id); });
