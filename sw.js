@@ -1,4 +1,4 @@
-const CACHE = 'marketscope-v2';
+const CACHE = 'marketscope-v3';
 const ASSETS = ['./','./index.html','./styles.css','./app.js','./data/watchlists.json','./manifest.webmanifest','./icon.svg','./og-card.png'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
