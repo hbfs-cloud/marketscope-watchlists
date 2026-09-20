@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Cockpit personnel multi-listes pour surveiller actions, ETF, matières premières et crypto.">
+  <meta name="theme-color" content="#07110f">
+  <meta property="og:title" content="MarketScope — Surveillance marchés">
+  <meta property="og:description" content="287 actions, ETF, cryptos et matières premières dans un cockpit filtrable.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://hbfs-cloud.github.io/marketscope-watchlists/">
+  <meta property="og:image" content="https://hbfs-cloud.github.io/marketscope-watchlists/og-card.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>MarketScope — Surveillance</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%2307110f'/%3E%3Cpath d='M10 43l12-13 9 7 18-21 5 5-22 27-9-8-8 9z' fill='%2377f2c1'/%3E%3C/svg%3E">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">M</span><div><strong>MarketScope</strong><small>Surveillance consolidée</small></div></div>
+    <div class="headline"><span id="marketState" class="pulse"></span><strong id="assetCount">287</strong> instruments <span>·</span> <strong>25</strong> listes</div>
+    <div class="top-actions"><button id="shareBtn" class="ghost"><span aria-hidden="true">↗</span> Partager</button><button id="streamBtn" class="ghost"><span aria-hidden="true">◉</span> Yahoo expérimental</button><button id="syncBtn" class="ghost"><span aria-hidden="true">↻</span> Synchro Google</button></div>
+  </header>
+
+  <main>
+    <section class="summary" aria-label="Résumé">
+      <div><small>UNIVERS</small><strong id="visibleCount">287</strong><span>visibles</span></div>
+      <div><small>SIGNAL POSITIF</small><strong id="positiveCount">—</strong><span>variation affichée</span></div>
+      <div><small>ANALYSE TECHNIQUE</small><strong id="analyzedCount">0</strong><span id="analysisState">chargement…</span></div>
+      <div><small>ALERTES</small><strong id="alertCount">0</strong><span>actives</span></div>
+      <div><small>CONNEXION</small><strong id="connectionState">Hors ligne</strong><span>données Trading 212 figées</span></div>
+    </section>
+
+    <section class="workspace">
+      <div class="filters">
+        <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Ticker, nom, tag…" autocomplete="off"></label>
+        <select id="listFilter" aria-label="Filtrer par liste"><option value="">Toutes les listes</option></select>
+        <select id="marketFilter" aria-label="Filtrer par marché"><option value="">Tous les marchés</option><option value="US">US</option><option value="EU">Europe</option><option value="CRYPTO">Crypto</option><option value="MACRO">Macro</option><option value="APAC">APAC</option></select>
+        <select id="signalFilter" aria-label="Filtrer par setup"><option value="">Tous les setups</option><option value="momentum">Momentum</option><option value="breakout">Breakout</option><option value="pullback">Pullback</option><option value="above200">Au-dessus MA200</option><option value="relvol">Volume relatif &gt; 1,5×</option><option value="oversold">RSI survendu</option><option value="analyzed">Données techniques dispo</option></select>
+        <select id="sortBy" aria-label="Trier"><option value="change-desc">Variation ↓</option><option value="relvol-desc">Volume relatif ↓</option><option value="rsi-desc">RSI ↓</option><option value="ma200-desc">Écart MA200 ↓</option><option value="ticker">Ticker A–Z</option><option value="name">Nom A–Z</option><option value="lists-desc">Nb listes ↓</option></select>
+        <button id="tagsOnly" class="chip-toggle" aria-pressed="false"># Avec tags</button>
+        <button id="analyzeBtn" class="chip-toggle">⌁ Actualiser l’analyse</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Instrument</th><th>Listes / tags</th><th>Marché</th><th>Tendance</th><th class="num">Prix</th><th class="num">Var.</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="empty" class="empty" hidden>Aucun instrument pour ces filtres.</div>
+      </div>
+      <p class="data-note">Données de listes importées de Trading 212 · Cotations initiales figées · Yahoo temps réel expérimental.</p>
+    </section>
+  </main>
+
+  <aside id="detail" class="detail" aria-hidden="true" aria-label="Détail instrument">
+    <button id="closeDetail" class="close" aria-label="Fermer">×</button>
+    <div id="detailContent"></div>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <dialog id="syncDialog">
+    <form method="dialog" class="dialog-card">
+      <button class="close dialog-close" value="cancel" aria-label="Fermer">×</button>
+      <p class="eyebrow">PERSISTANCE MULTI-APPAREILS</p>
+      <h2>Synchronisation Google</h2>
+      <p>Renseignez la configuration publique de votre projet Firebase. Les tags et alertes sont stockés dans votre espace Firestore, isolés par votre compte Google.</p>
+      <label>Configuration Firebase JSON<textarea id="firebaseConfig" rows="7" placeholder='{"apiKey":"…","authDomain":"…","projectId":"…","appId":"…"}'></textarea></label>
+      <div class="dialog-actions"><button value="cancel" class="ghost">Annuler</button><button id="connectGoogle" value="none" class="primary">Se connecter avec Google</button></div>
+      <small id="syncStatus">Sans configuration, les données restent uniquement dans ce navigateur.</small>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
